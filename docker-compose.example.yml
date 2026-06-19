@@ -1,0 +1,26 @@
+# Example: run takoqa as a container against an app on the host.
+#
+# Uses host networking so the agent can reach a server running on the host at
+# localhost. For a bridge network instead, drop network_mode and set
+# QA_AGENT_BASE_URL to http://host.docker.internal:<port> (add
+# `extra_hosts: ["host.docker.internal:host-gateway"]` on Linux).
+#
+#   ANTHROPIC_API_KEY=... QA_AGENT_BASE_URL=http://localhost:3000 \
+#     docker compose -f docker-compose.example.yml run --rm takoqa
+#
+# For wiring into your own app's compose stack, copy this into a private
+# docker-compose.<app>.yml (gitignored) and add depends_on for your services.
+
+services:
+  takoqa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    network_mode: "host"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - QA_AGENT_BASE_URL=${QA_AGENT_BASE_URL:-http://localhost:3000}
+      - QA_AGENT_MODEL=${QA_AGENT_MODEL:-claude-sonnet-4-6}
+    volumes:
+      - ./runs:/app/runs
+    command: ["--profile", "profiles/example.yaml", "--tag", "smoke"]

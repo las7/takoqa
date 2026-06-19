@@ -1,0 +1,8 @@
+node_modules
+dist
+runs
+test
+.git
+*.log
+.env
+.env.local

@@ -1,0 +1,20 @@
+node_modules/
+dist/
+runs/
+recipes/
+baseline/
+learned/
+*.log
+# NOTE: eval/ (the committed eval ledger) is intentionally NOT ignored — it is
+# the durable harness-quality baseline the comparative gate compares against.
+.env
+.env.local
+
+# Private, product-specific profiles and compose files — kept local, never
+# committed. Name anything product-specific with a *.local.(yaml|yml) suffix.
+*.local.yaml
+*.local.yml
+profiles/*.local.yaml
+
+# Stray local scratch test files
+test/_*.ts

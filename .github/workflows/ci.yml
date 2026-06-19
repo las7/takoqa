@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # Age enforcement happens at lockfile-generation time, not install time
+      # (npm/cli#9005), so CI must override the .npmrc min-release-age to 0.
+      - name: Install dependencies
+        run: npm ci --min-release-age=0
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Oracle unit tests + engine integration tests against the fixture app.
+      - name: Test
+        run: npm test

@@ -1,0 +1,55 @@
+{
+  "name": "takoqa",
+  "version": "0.1.0",
+  "description": "A swarm of browser agents that breaks your web app before your users do. Plain-language missions in, real bugs out.",
+  "license": "MIT",
+  "author": "Seiji Sakurai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/las7/takoqa.git"
+  },
+  "homepage": "https://github.com/las7/takoqa#readme",
+  "bugs": {
+    "url": "https://github.com/las7/takoqa/issues"
+  },
+  "keywords": [
+    "qa",
+    "testing",
+    "browser-automation",
+    "playwright",
+    "llm",
+    "ai-agent",
+    "end-to-end",
+    "security-testing",
+    "accessibility",
+    "anthropic"
+  ],
+  "type": "module",
+  "bin": {
+    "takoqa": "dist/run.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "run": "tsx src/run.ts",
+    "example": "tsx src/run.ts --profile profiles/example.yaml",
+    "test": "node --import tsx --test test/oracles.test.ts test/engine.test.ts test/report.test.ts test/knowledge.test.ts test/findings.test.ts test/agent.test.ts test/progress.test.ts test/baseline.test.ts test/learned.test.ts test/discover.test.ts test/explore.test.ts test/planner.test.ts test/exploreLoop.test.ts test/matrix.test.ts test/security.test.ts test/authz-differential.test.ts test/routeSource.test.ts test/selfeval.test.ts test/evalLedger.test.ts test/metaeval.test.ts test/observe.test.ts test/act.test.ts test/serverLog.test.ts",
+    "test:unit": "node --import tsx --test test/oracles.test.ts",
+    "selfeval": "node --import tsx --test test/selfeval.test.ts",
+    "eval": "node --import tsx test/eval.ts",
+    "metaeval": "node --import tsx test/metaeval.ts",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "playwright": "^1.49.0",
+    "yaml": "^2.6.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "prettier": "^3.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

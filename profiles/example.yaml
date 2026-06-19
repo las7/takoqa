@@ -1,0 +1,156 @@
+# Example takoqa profile — a template you copy and adapt to your own product.
+#
+# The engine is product-agnostic: everything specific to an app lives here.
+# Copy this file, point baseUrl at your app, and describe what a real user
+# would try in `missions`. Run it with:
+#
+#   ANTHROPIC_API_KEY=... npx tsx src/run.ts --profile profiles/example.yaml
+#
+# Keep private/product-specific profiles out of version control by naming them
+# *.local.yaml (already gitignored).
+
+name: example
+baseUrl: http://localhost:3000
+
+# How the agent gets past auth before missions run.
+#   none         -> auth is disabled server-side (test/staging bypass)
+#   storageState -> { strategy: storageState, path: ./auth.json }
+#   loginForm    -> drives a login form; credentials come from env vars, e.g.
+#                   { strategy: loginForm, loginPath: /login,
+#                     usernameEnv: APP_USER, passwordEnv: APP_PASS }
+auth:
+  strategy: none
+
+# Optional shell command run before each mission to reset state (seed/clear).
+# resetCommand: "npm run db:reset"
+
+# What counts as a bug, checked after every step.
+invariants:
+  noPageErrors: true # uncaught JS exceptions
+  noConsoleErrors: true # console.error output
+  failOnHttpStatusAtLeast: 500 # 5xx responses
+  bodyErrorSignatures:
+    - "Application error"
+    - "Internal Server Error"
+    - "Something went wrong"
+  ignoreUrlSubstrings: # network noise to ignore
+    - "/_next/"
+    - "analytics"
+
+# Who's driving. The description is injected into the agent's system prompt to
+# bias how it behaves — same goal, different interaction style.
+personas:
+  - name: new-user
+    description: >
+      A first-time visitor exploring the product. Comfortable with software but
+      new to this app. Reads labels, takes the obvious path.
+    traits: [curious, methodical]
+  - name: power-user
+    description: >
+      An experienced user who moves fast, expects things to just work, and is
+      annoyed by slow or confusing flows. Takes the most direct path.
+    traits: [impatient, skips-instructions]
+  # An attacker persona is only used for ACTIVE security probes, and only when
+  # the run is launched with --security (which turns on the attacker lever). It
+  # is inert otherwise. Probes are reflection/observation-only — never
+  # destructive — see the security block below.
+  # - name: prober
+  #   description: >
+  #     A bounded security tester. Injects crafted markers into free-text fields
+  #     and tampers with ids in URLs to look for reflection / access-control gaps.
+  #     Observation only — never destroys or exfiltrates data.
+  #   attacker: true
+
+# Each mission is a user story. You give intent + success criteria; the agent
+# figures out the clicks.
+missions:
+  - id: sign-in-and-land
+    goal: Sign in (or continue as guest) and reach the main/home screen.
+    persona: new-user
+    startPath: /
+    maxSteps: 12
+    successCriteria:
+      - "The main authenticated/home view is reached"
+      - "No error or empty-state is shown"
+    tags: [smoke, auth]
+
+  - id: primary-create-action
+    goal: >
+      Perform the product's primary "create" action (e.g. create an item,
+      upload a file, start a new document) and confirm it succeeds.
+    persona: new-user
+    startPath: /
+    maxSteps: 18
+    # fixtures: [fixtures/sample.pdf]   # files the mission may upload
+    successCriteria:
+      - "The new item/result appears in the UI"
+      - "No error after submitting"
+    tags: [smoke]
+
+  - id: search-or-filter
+    goal: Use search or a filter to find something, and confirm results update.
+    persona: power-user
+    startPath: /
+    maxSteps: 12
+    successCriteria:
+      - "Results change in response to the query"
+    tags: [search]
+
+  - id: explore-freely
+    goal: >
+      Explore the product like a curious first-time user. Visit the main areas,
+      try the primary action in each, and surface anything broken, confusing, or
+      dead-ended along the way.
+    persona: new-user
+    startPath: /
+    maxSteps: 25
+    successCriteria:
+      - "Several distinct areas were visited"
+      - "Primary actions were attempted without hitting errors"
+    tags: [exploratory]
+
+  # A security-tagged probe mission. Only meaningful with --security (the
+  # attacker lever). Reflection/observation-only — never destructive.
+  # - id: reflect-probe
+  #   goal: >
+  #     Inject a unique marker containing HTML metacharacters into a free-text
+  #     field, submit it, and observe whether it is reflected un-escaped.
+  #   persona: prober
+  #   startPath: /
+  #   maxSteps: 8
+  #   tags: [security, probe]
+
+# ---------------------------------------------------------------------------
+# OPTIONAL: deterministic security oracles. INERT unless this block is present.
+# When set, same-origin html/json response bodies + Set-Cookie attributes are
+# captured and checked after every step. A profile WITHOUT this block behaves
+# exactly as before (no body capture, no security findings).
+# ---------------------------------------------------------------------------
+# security:
+#   # Security headers a top-level HTML document must carry (lowercase).
+#   requiredHeaders:
+#     - content-security-policy
+#     - strict-transport-security
+#     - x-frame-options
+#     - x-content-type-options
+#   # Named regexes for secrets that must never appear in a response body. A
+#   # built-in JWT detector always runs in addition to these. Evidence is always
+#   # REDACTED (never the full secret).
+#   sensitivePatterns:
+#     - { name: aws-access-key, pattern: "AKIA[0-9A-Z]{16}" }
+#     - { name: private-key, pattern: "-----BEGIN [A-Z ]*PRIVATE KEY-----" }
+#   # Cookies holding a session — checked for HttpOnly + Secure + SameSite.
+#   sessionCookieNames: [session, sid]
+#   # URL substrings whose bodies are exempt from the reflection/header oracles.
+#   ignoreReflectionPaths: ["/preview/"]
+
+# ---------------------------------------------------------------------------
+# OPTIONAL: authz differential for the --matrix sweep. Maps a normalized route
+# to the variant names allowed to reach it. A variant that REACHES a route NOT
+# in its allow-list is flagged as a critical broken_authz (IDOR / missing
+# access control). An UNDECLARED route asserts nothing (no default-deny).
+# Requires >=2 profile.variants (each {name, auth}).
+# ---------------------------------------------------------------------------
+# expectedAccess:
+#   "/admin": [op]            # only the "op" variant may reach /admin
+#   "/settings/billing": [op] # anon/basic reaching it is a broken_authz
