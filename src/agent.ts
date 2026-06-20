@@ -226,6 +226,34 @@ function coerceAction(input: Record<string, unknown>): Action {
         x2: Number(input.x2),
         y2: Number(input.y2),
       };
+    case "drag_and_drop":
+      return {
+        type: "drag_and_drop",
+        from: Number(input.from),
+        to: Number(input.to),
+      };
+    case "hover":
+      return { type: "hover", ref: Number(input.ref) };
+    case "right_click":
+      return { type: "right_click", ref: Number(input.ref) };
+    case "select_option":
+      return {
+        type: "select_option",
+        ref: Number(input.ref),
+        value: String(input.value ?? ""),
+      };
+    case "set_range":
+      return {
+        type: "set_range",
+        ref: Number(input.ref),
+        value: Number(input.value),
+      };
+    case "key":
+      return {
+        type: "key",
+        keys: String(input.keys ?? ""),
+        ref: input.ref === undefined ? undefined : Number(input.ref),
+      };
     default:
       return {
         type: "finish",
