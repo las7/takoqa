@@ -28,6 +28,12 @@ import { ALL_LEVERS } from "./planner.js";
 import { normalizeRoute } from "./progress.js";
 import { baselineFingerprint } from "./findings.js";
 import { loadBaseline, saveBaseline } from "./baseline.js";
+import {
+  compareRuns,
+  loadRunFindings,
+  formatDiff,
+  diffExitCode,
+} from "./compare.js";
 import { loadLearned, mergeIntoStore, saveLearned } from "./learned.js";
 import { loadProfile } from "./profile.js";
 import type { RunReport, ServerLogSource } from "./types.js";
@@ -81,6 +87,8 @@ interface Args {
   security: boolean;
   /** Path to a server log file to correlate tracebacks onto 5xx/crash findings. */
   serverLog?: string;
+  /** Standalone: diff two prior runs (dirs or run.json paths) and exit. */
+  compare?: [string, string];
 }
 
 function parseArgs(argv: string[]): Args {
@@ -140,6 +148,8 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--matrix") args.matrix = true;
     else if (a === "--security") args.security = true;
     else if (a === "--server-log") args.serverLog = argv[++i];
+    else if (a === "--compare")
+      args.compare = [argv[++i] ?? "", argv[++i] ?? ""];
   }
   return args;
 }
@@ -152,6 +162,17 @@ async function main(): Promise<void> {
   if (args.discover) {
     process.stdout.write(renderRoutesYaml(discoverRoutes(args.discover)));
     process.exit(0);
+  }
+
+  // --compare <before> <after>: diff two saved runs (dirs or run.json) by finding
+  // identity and exit. Deterministic, no profile/LLM needed. Use it to verify a
+  // fix removed a finding, or to env-diff the same profile across two --base-urls
+  // (e.g. local vs prod). Exits 1 if AFTER introduced any finding (regression).
+  if (args.compare) {
+    const [before, after] = args.compare;
+    const diff = compareRuns(loadRunFindings(before), loadRunFindings(after));
+    console.log(formatDiff(diff, { before, after }));
+    process.exit(diffExitCode(diff));
   }
 
   if (!args.profile) {
