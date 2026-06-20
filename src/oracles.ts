@@ -602,6 +602,20 @@ interface JudgeVerdict {
 }
 
 /** LLM end-of-mission verdict: did the user accomplish the goal, any UX issues. */
+/**
+ * Dedupe + cap the page trail handed to the consistency judge: keep the LAST
+ * snapshot per distinct URL (the page's final rendered state), capped to the most
+ * recent `max` pages so the prompt stays bounded on long missions.
+ */
+export function pagesForJudge(
+  trail: { url: string; text: string }[],
+  max = 6,
+): { url: string; text: string }[] {
+  const byUrl = new Map<string, { url: string; text: string }>();
+  for (const p of trail) byUrl.set(p.url, p); // last write wins → final state per URL
+  return [...byUrl.values()].slice(-max);
+}
+
 export async function judgeMission(
   llm: LLMClient,
   mission: Mission,
@@ -617,7 +631,21 @@ export async function judgeMission(
    * byte-identical to before.
    */
   extraExclusions?: string[],
+  /**
+   * Per-page snapshots collected across the mission. When ≥2 distinct pages were
+   * seen, they're handed to the judge so it can flag data the app presents
+   * inconsistently ACROSS views (the highest-value data inconsistencies — e.g. a
+   * run "success" in a list but "failed" on its detail page).
+   */
+  pageTrail?: { url: string; text: string }[],
 ): Promise<Finding[]> {
+  const pages = pageTrail ? pagesForJudge(pageTrail) : [];
+  const crossPage =
+    pages.length > 1
+      ? `PAGES VISITED THIS MISSION — compare the SAME data across them for contradictions:\n${pages
+          .map((p) => `--- ${p.url} ---\n${p.text}`)
+          .join("\n\n")}`
+      : "";
   const prompt = [
     `You are a QA reviewer judging whether a simulated user accomplished their goal.`,
     ``,
@@ -630,10 +658,11 @@ export async function judgeMission(
     ``,
     `FINAL PAGE TEXT:\n${finalObs.visibleText.slice(0, 1500)}`,
     ``,
+    crossPage,
     `Judge against the screenshot too. Respond with ONLY a JSON object:`,
     `{"goalMet": boolean, "severity": "critical"|"high"|"medium"|"low", "issues": string[], "inconsistencies": string[], "rationale": string}`,
     `"issues" lists UX or quality problems even if the goal was met (confusing flow, slow, wrong output, broken layout).`,
-    `"inconsistencies" lists places the app presents the SAME data or UI inconsistently — report only contradictions you can actually see, with the two conflicting values. Examples: a count/stat that doesn't match the rows or items actually shown ("12 runs" but 8 rows); the same entity showing a different value or status across views (a run "success" in the list but "failed" on its detail); a value attributed differently in two places (a run's model "gpt-4o" here, "claude" there); mixed formatting of the same data type on one page (dates as "2026-06-20" and "Jun 20, 2026"); the same concept labeled with different terms ("Runs" vs "Executions"); inconsistent component styling/state for equivalent controls. Empty array if you see none — do not speculate.`,
+    `"inconsistencies" lists places the app presents the SAME data or UI inconsistently — report only contradictions you can actually see, with the two conflicting values. Examples: a count/stat that doesn't match the rows or items actually shown ("12 runs" but 8 rows); the same entity showing a different value or status across views (a run "success" in the list but "failed" on its detail); a value attributed differently in two places (a run's model "gpt-4o" here, "claude" there); mixed formatting of the same data type on one page (dates as "2026-06-20" and "Jun 20, 2026"); the same concept labeled with different terms ("Runs" vs "Executions"); inconsistent component styling/state for equivalent controls. If "PAGES VISITED" are listed above, compare the SAME entity, value, count, or status ACROSS those pages — cross-view contradictions are the most important to catch. Empty array if you see none — do not speculate.`,
     `Do NOT report development-only framework chrome as a product defect: a small "N Issue(s)" error-count badge in a corner is the dev toolbar/overlay, and hydration/console warnings shown only in dev builds are not user-facing bugs. Judge the product, not the dev environment.`,
     knowledge ? renderKnowledge(knowledge, { forJudge: true }) : ``,
     extraExclusions && extraExclusions.length
