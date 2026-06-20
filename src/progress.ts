@@ -39,6 +39,18 @@ export function actionSignature(action: Action): string {
       return `double_click:${action.x},${action.y}`;
     case "drag":
       return `drag:${action.x},${action.y}-${action.x2},${action.y2}`;
+    case "drag_and_drop":
+      return `drag_and_drop:${action.from}->${action.to}`;
+    case "hover":
+      return `hover:${action.ref}`;
+    case "right_click":
+      return `right_click:${action.ref}`;
+    case "select_option":
+      return `select_option:${action.ref}:${action.value}`;
+    case "set_range":
+      return `set_range:${action.ref}:${action.value}`;
+    case "key":
+      return `key:${action.keys}:${action.ref ?? ""}`;
     case "finish":
       return "finish";
   }

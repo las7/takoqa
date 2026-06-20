@@ -14,6 +14,13 @@ export interface ObservedElement {
   tag: string;
   role: string;
   label: string;
+  /**
+   * Interaction capability hint, when the element supports something beyond a
+   * plain click: "draggable" | "slider" | "select" | "editable" | "menu".
+   * Surfaced to the agent so it reaches for drag_and_drop / set_range /
+   * select_option / hover instead of guessing. Empty/undefined = plain control.
+   */
+  cap?: string;
 }
 
 export interface Observation {
@@ -97,7 +104,20 @@ const TAG_SCRIPT = `(() => {
   // ambiguous / resolve the wrong node).
   for (const el of document.querySelectorAll('[data-qa-ref]')) el.removeAttribute('data-qa-ref');
 
-  const sel = 'a, button, input, textarea, select, [role=button], [role=link], [role=tab], [role=menuitem], [contenteditable=""], [contenteditable=true], [onclick]';
+  const sel = 'a, button, input, textarea, select, [role=button], [role=link], [role=tab], [role=menuitem], [role=slider], [contenteditable=""], [contenteditable=true], [onclick], [draggable=true], [data-rbd-draggable-id], [aria-roledescription=sortable]';
+  // Interaction-capability hint beyond plain click: tells the agent to reach for
+  // drag_and_drop / set_range / select_option / hover. Matches the common DnD
+  // libraries (react-beautiful-dnd, dnd-kit) by their markers, plus native
+  // draggable=true, range/slider, <select>, and contenteditable.
+  const capOf = (el, tag, role) => {
+    const t = (el.getAttribute('type') || '').toLowerCase();
+    if ((tag === 'input' && t === 'range') || role === 'slider') return 'slider';
+    if (tag === 'select') return 'select';
+    if (el.isContentEditable) return 'editable';
+    if (el.getAttribute('draggable') === 'true' || el.closest('[draggable=true],[data-rbd-draggable-id],[aria-roledescription=sortable]')) return 'draggable';
+    if (el.getAttribute('aria-haspopup')) return 'menu';
+    return '';
+  };
   const vw = window.innerWidth, vh = window.innerHeight;
   const onScreen = (r) => r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
   ${HIDDEN_HELPER}
@@ -131,7 +151,7 @@ const TAG_SCRIPT = `(() => {
   for (const c of cands) {
     if (ref >= ${MAX_ELEMENTS}) break;
     c.el.setAttribute('data-qa-ref', String(ref));
-    out.push({ ref: ref, tag: c.tag, role: c.role, label: c.label });
+    out.push({ ref: ref, tag: c.tag, role: c.role, label: c.label, cap: capOf(c.el, c.tag, c.role) });
     ref++;
   }
   return { elements: out, total: cands.length, shown: out.length };
@@ -411,7 +431,8 @@ export async function observe(page: Page): Promise<Observation> {
 /** Renders the observation as the text block shown to the model. */
 export function renderObservation(obs: Observation): string {
   const lines = obs.elements.map(
-    (e) => `[${e.ref}] <${e.tag}${e.role ? ` role=${e.role}` : ""}> ${e.label}`,
+    (e) =>
+      `[${e.ref}] <${e.tag}${e.role ? ` role=${e.role}` : ""}${e.cap ? ` cap=${e.cap}` : ""}> ${e.label}`,
   );
   const parts = [
     `URL: ${obs.url}`,

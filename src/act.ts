@@ -20,6 +20,13 @@ export type Action =
   | { type: "click_at"; x: number; y: number }
   | { type: "double_click"; x: number; y: number }
   | { type: "drag"; x: number; y: number; x2: number; y2: number }
+  // Ref-addressed complex interactions — more reliable than guessing pixels.
+  | { type: "drag_and_drop"; from: number; to: number } // drag element `from` onto `to`
+  | { type: "hover"; ref: number } // reveal a hover menu / tooltip
+  | { type: "right_click"; ref: number } // open a context menu
+  | { type: "select_option"; ref: number; value: string } // pick an <option> by label or value
+  | { type: "set_range"; ref: number; value: number } // set a native range/slider input
+  | { type: "key"; keys: string; ref?: number } // press a key/chord (ArrowRight, Control+a, Escape); focuses `ref` first if given
   | { type: "finish"; success: boolean; summary: string };
 
 export interface ActionResult {
@@ -150,18 +157,41 @@ export function actionLabel(action: Action): string {
       return "double-click";
     case "drag":
       return "drag";
+    case "drag_and_drop":
+      return "drag → drop";
+    case "hover":
+      return "hover";
+    case "right_click":
+      return "right-click";
+    case "select_option":
+      return `select: ${action.value.slice(0, 24)}`;
+    case "set_range":
+      return `set: ${action.value}`;
+    case "key":
+      return `key: ${action.keys.slice(0, 24)}`;
     default:
       return action.type;
   }
 }
 
-/** The element ref an action targets, if any. */
+/** The element ref an action targets, if any (for the on-page annotation). */
 export function actionRef(action: Action): number | undefined {
-  return action.type === "click" ||
-    action.type === "type" ||
-    action.type === "upload"
-    ? action.ref
-    : undefined;
+  switch (action.type) {
+    case "click":
+    case "type":
+    case "upload":
+    case "hover":
+    case "right_click":
+    case "select_option":
+    case "set_range":
+      return action.ref;
+    case "key":
+      return action.ref;
+    case "drag_and_drop":
+      return action.from; // annotate the source element
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -342,6 +372,69 @@ export async function executeAction(
           summary: `Dragged (${action.x},${action.y}) → (${action.x2},${action.y2})`,
         };
       }
+      case "drag_and_drop": {
+        const src = page.locator(selector(action.from));
+        const dst = page.locator(selector(action.to));
+        if (!(await present(src))) return staleResult(action.from);
+        if (!(await present(dst))) return staleResult(action.to);
+        // Playwright's dragTo performs the full sequence (hover → mousedown →
+        // stepped mousemove → mouseup) AND dispatches the HTML5 drag events, so
+        // it covers both native draggable=true DnD and most pointer-based
+        // framework DnD (react-dnd, dnd-kit, react-beautiful-dnd).
+        await src.dragTo(dst, { timeout: 8000 });
+        return {
+          ok: true,
+          summary: `Dragged [${action.from}] onto [${action.to}]`,
+        };
+      }
+      case "hover": {
+        const el = page.locator(selector(action.ref));
+        if (!(await present(el))) return staleResult(action.ref);
+        await el.hover({ timeout: 8000 });
+        return { ok: true, summary: `Hovered [${action.ref}]` };
+      }
+      case "right_click": {
+        const el = page.locator(selector(action.ref));
+        if (!(await present(el))) return staleResult(action.ref);
+        await el.click({ button: "right", timeout: 8000 });
+        return { ok: true, summary: `Right-clicked [${action.ref}]` };
+      }
+      case "select_option": {
+        const el = page.locator(selector(action.ref));
+        if (!(await present(el))) return staleResult(action.ref);
+        // The agent sees the visible option text, so try label first, then value.
+        await el
+          .selectOption({ label: action.value }, { timeout: 4000 })
+          .catch(() => el.selectOption(action.value, { timeout: 4000 }));
+        return {
+          ok: true,
+          summary: `Selected "${action.value}" in [${action.ref}]`,
+        };
+      }
+      case "set_range": {
+        const el = page.locator(selector(action.ref));
+        if (!(await present(el))) return staleResult(action.ref);
+        // Native <input type=range>: fill sets the value and fires input/change.
+        // Custom (div/role=slider) sliders aren't fillable — use `key` with arrows.
+        await el.fill(String(action.value), { timeout: 8000 });
+        return {
+          ok: true,
+          summary: `Set [${action.ref}] to ${action.value}`,
+        };
+      }
+      case "key": {
+        if (action.ref !== undefined) {
+          const el = page.locator(selector(action.ref));
+          if (await present(el)) await el.focus().catch(() => {});
+        }
+        await page.keyboard.press(action.keys);
+        return {
+          ok: true,
+          summary: `Pressed ${action.keys}${
+            action.ref !== undefined ? ` on [${action.ref}]` : ""
+          }`,
+        };
+      }
       case "wait": {
         await page.waitForTimeout(Math.min(action.ms, 10000));
         return { ok: true, summary: `Waited ${action.ms}ms` };
@@ -363,7 +456,7 @@ export async function executeAction(
 export const ACTION_TOOL_SCHEMA = {
   name: "act",
   description:
-    "Take a single action on the page as a human user would. Prefer addressing elements by their [ref] number. For areas drawn on a <canvas> that have no refs (e.g. a diagram/editor), act by pixel coordinates read from the screenshot using click_at/double_click/drag.",
+    "Take a single action on the page as a human user would. Prefer addressing elements by their [ref] number. Elements carry a cap= hint for special interactions: cap=draggable → drag_and_drop {from,to}; cap=slider → set_range {ref,value} or key with ArrowLeft/ArrowRight; cap=select → select_option {ref,value}; cap=editable → click then type; cap=menu → hover or click to open it. Use right_click to open context menus, hover to reveal hover-only menus/tooltips, and key for keyboard interactions (ArrowRight, Enter, Escape, Control+a). For areas drawn on a <canvas> with no refs (a diagram/editor), act by pixel coordinates from the screenshot using click_at/double_click/drag.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -379,8 +472,32 @@ export const ACTION_TOOL_SCHEMA = {
           "click_at",
           "double_click",
           "drag",
+          "drag_and_drop",
+          "hover",
+          "right_click",
+          "select_option",
+          "set_range",
+          "key",
           "finish",
         ],
+      },
+      from: {
+        type: "number",
+        description: "Source element ref to pick up (drag_and_drop).",
+      },
+      to: {
+        type: "number",
+        description: "Target element ref to drop onto (drag_and_drop).",
+      },
+      value: {
+        type: "string",
+        description:
+          "Option label/value for select_option, or the numeric value for set_range.",
+      },
+      keys: {
+        type: "string",
+        description:
+          "Key or chord to press (key action): e.g. ArrowRight, Enter, Escape, Control+a.",
       },
       ref: {
         type: "number",
