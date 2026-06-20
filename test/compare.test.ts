@@ -74,3 +74,32 @@ test("empty before is all-added; empty after is all-fixed", () => {
   assert.equal(compareRuns([], fs).added.length, 1);
   assert.equal(compareRuns(fs, []).fixed.length, 1);
 });
+
+test("same identity + different evidence is `changed`, not `unchanged`", () => {
+  // The dogfood case: a security-header finding partially fixed (4 → 1) keeps the
+  // same title, so a presence-only diff calls it unchanged. Evidence diff catches it.
+  const before: Finding = {
+    ...f("insecure_headers", "Missing security headers on /"),
+    evidence: "missing: csp, x-frame-options, x-content-type-options, hsts",
+  };
+  const after: Finding = {
+    ...f("insecure_headers", "Missing security headers on /"),
+    evidence: "missing: csp",
+  };
+  const d = compareRuns([before], [after]);
+  assert.equal(d.unchanged.length, 0);
+  assert.equal(d.fixed.length, 0);
+  assert.equal(d.added.length, 0);
+  assert.equal(d.changed.length, 1, "partial fix → changed");
+  assert.equal(d.changed[0]!.after.evidence, "missing: csp");
+});
+
+test("diffExitCode flags a severity escalation under the same title", () => {
+  const lo = f("ux_issue", "Slow page", "low");
+  const hi = f("ux_issue", "Slow page", "high");
+  const up = compareRuns([lo], [hi]);
+  assert.equal(up.changed.length, 1, "severity differs → changed");
+  assert.equal(diffExitCode(up), 1, "low→high escalation is a regression");
+  const down = compareRuns([hi], [lo]);
+  assert.equal(diffExitCode(down), 0, "high→low de-escalation is not");
+});
