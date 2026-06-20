@@ -27,6 +27,12 @@ export interface RunDiff {
   fixed: Finding[];
   added: Finding[];
   unchanged: Finding[];
+  /**
+   * Same identity in both runs, but the evidence or severity differs — a partial
+   * fix or partial regression a pure presence diff misses (e.g. a security-header
+   * finding whose evidence goes from "4 missing" to "1 missing", same title).
+   */
+  changed: { before: Finding; after: Finding }[];
 }
 
 /**
@@ -56,15 +62,25 @@ export function compareRuns(before: Finding[], after: Finding[]): RunDiff {
   };
   const a = index(before);
   const b = index(after);
+  // Evidence signature: what the finding *says*, beyond its identity. A change
+  // here on a stable fingerprint means the same bug was partially fixed (or got
+  // worse) — which a pure presence diff reports as "unchanged".
+  const evid = (f: Finding) => `${f.severity}|${f.evidence ?? f.detail ?? ""}`;
 
   const fixed: Finding[] = [];
   const unchanged: Finding[] = [];
-  for (const [k, f] of a) (b.has(k) ? unchanged : fixed).push(f);
+  const changed: { before: Finding; after: Finding }[] = [];
+  for (const [k, fa] of a) {
+    const fb = b.get(k);
+    if (!fb) fixed.push(fa);
+    else if (evid(fa) === evid(fb)) unchanged.push(fa);
+    else changed.push({ before: fa, after: fb });
+  }
 
   const added: Finding[] = [];
   for (const [k, f] of b) if (!a.has(k)) added.push(f);
 
-  return { fixed, added, unchanged };
+  return { fixed, added, unchanged, changed };
 }
 
 /** Human-readable summary; pass labels to name the two sides in the output. */
@@ -80,7 +96,7 @@ export function formatDiff(
 
   const out: string[] = [
     `Compared  ${bl}  →  ${al}`,
-    `  fixed: ${diff.fixed.length}   added: ${diff.added.length}   unchanged: ${diff.unchanged.length}`,
+    `  fixed: ${diff.fixed.length}   added: ${diff.added.length}   changed: ${diff.changed.length}   unchanged: ${diff.unchanged.length}`,
   ];
   if (diff.added.length) {
     out.push(`\n### ADDED — present in AFTER, absent in BEFORE (regressions)`);
@@ -89,6 +105,24 @@ export function formatDiff(
   if (diff.fixed.length) {
     out.push(`\n### FIXED — in BEFORE, gone in AFTER`);
     sorted(diff.fixed).forEach((f) => out.push(line(f)));
+  }
+  if (diff.changed.length) {
+    out.push(
+      `\n### CHANGED — same finding, evidence/severity differs (partial fix or regression)`,
+    );
+    const ev = (f: Finding) =>
+      (f.evidence ?? f.detail ?? "").replace(/\s+/g, " ").trim().slice(0, 90);
+    [...diff.changed]
+      .sort((x, y) => x.after.title.localeCompare(y.after.title))
+      .forEach(({ before, after }) => {
+        out.push(
+          `  [${before.severity}→${after.severity}] ${after.kind} — ${after.title}`,
+        );
+        if (ev(before) !== ev(after)) {
+          out.push(`      − ${ev(before)}`);
+          out.push(`      + ${ev(after)}`);
+        }
+      });
   }
   if (diff.unchanged.length) {
     out.push(`\n### UNCHANGED — ${diff.unchanged.length} (present in both)`);
@@ -110,8 +144,13 @@ export function diffExitCode(
     high: 2,
     critical: 3,
   };
-  const gating = diff.added.filter(
-    (f) => rank[f.severity] >= rank[minSeverity],
+  const added = diff.added.filter((f) => rank[f.severity] >= rank[minSeverity]);
+  // A finding that survived but ESCALATED severity past the gate is a regression
+  // too (e.g. a low UX nit that became a high bug under the same title).
+  const escalated = diff.changed.filter(
+    ({ before, after }) =>
+      rank[after.severity] > rank[before.severity] &&
+      rank[after.severity] >= rank[minSeverity],
   );
-  return gating.length > 0 ? 1 : 0;
+  return added.length + escalated.length > 0 ? 1 : 0;
 }
