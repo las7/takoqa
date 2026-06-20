@@ -364,11 +364,16 @@ async function main(): Promise<void> {
     llm = new MockClient();
   } else {
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    // No hard key requirement anymore: with neither var set, a bare client still
+    // authenticates if an `ant auth login` profile is configured on disk (OAuth,
+    // auto-refreshed like Claude Code). Warn — don't exit — since that path is
+    // only valid when a profile exists; the SDK raises a clear auth error at
+    // request time otherwise.
+    if (!apiKey && !process.env.ANTHROPIC_AUTH_TOKEN) {
       console.error(
-        "ANTHROPIC_API_KEY is required (or pass --mock for a dry run).",
+        "No ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN set — relying on an " +
+          "`ant auth login` profile. Configure one, set a key, or pass --mock.",
       );
-      process.exit(2);
     }
     llm = new AnthropicClient(apiKey, args.model);
   }

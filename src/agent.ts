@@ -87,10 +87,15 @@ function userMessage(obs: Observation, ctx: AgentContext): string {
 export class AnthropicClient implements LLMClient {
   private client: Anthropic;
   constructor(
-    apiKey: string,
+    apiKey: string | undefined,
     private readonly model: string = "claude-sonnet-4-6",
   ) {
-    this.client = new Anthropic({ apiKey });
+    // With an explicit key, use it. Without one, construct a bare client and let
+    // the SDK resolve credentials itself — ANTHROPIC_AUTH_TOKEN, or an
+    // `ant auth login` OAuth profile that it auto-refreshes. That's the same
+    // mechanism Claude Code uses, so a long unattended run won't die when a
+    // short-lived OAuth token expires mid-run (a static key never expires).
+    this.client = apiKey ? new Anthropic({ apiKey }) : new Anthropic();
   }
 
   async decide(obs: Observation, ctx: AgentContext): Promise<Decision> {
