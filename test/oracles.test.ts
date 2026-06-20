@@ -5,7 +5,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkInvariants, judgeMission } from "../src/oracles.js";
+import {
+  checkInvariants,
+  judgeMission,
+  pagesForJudge,
+} from "../src/oracles.js";
 import type { LLMClient } from "../src/agent.js";
 import type { CapturedEvents } from "../src/browser.js";
 import type { Observation } from "../src/observe.js";
@@ -548,6 +552,61 @@ test("no `inconsistency` finding when the judge reports none / omits the field",
     ).length,
     0,
   );
+});
+
+test("pagesForJudge keeps the last snapshot per url and caps the count", () => {
+  const pages = pagesForJudge([
+    { url: "/runs", text: "stale" },
+    { url: "/runs/1", text: "detail" },
+    { url: "/runs", text: "fresh" }, // revisit → latest wins
+  ]);
+  assert.equal(pages.length, 2, "deduped by url");
+  assert.equal(
+    pages.find((p) => p.url === "/runs")!.text,
+    "fresh",
+    "keeps the latest snapshot",
+  );
+  const many = Array.from({ length: 10 }, (_, i) => ({
+    url: `/p${i}`,
+    text: `t${i}`,
+  }));
+  assert.equal(pagesForJudge(many, 6).length, 6, "capped to max");
+});
+
+test("the page trail reaches the judge prompt for cross-view comparison", async () => {
+  let captured = "";
+  const llm: LLMClient = {
+    decide: async () => {
+      throw new Error("unused");
+    },
+    judge: async (prompt: string) => {
+      captured = prompt;
+      return JSON.stringify({
+        goalMet: true,
+        severity: "low",
+        issues: [],
+        inconsistencies: [],
+        rationale: "ok",
+      });
+    },
+    propose: async () => "[]",
+  };
+  await judgeMission(
+    llm,
+    mission,
+    obs("detail"),
+    [],
+    base,
+    undefined,
+    undefined,
+    [
+      { url: "https://x/runs", text: "Refund run — success" },
+      { url: "https://x/runs/1", text: "Refund run detail — failed" },
+    ],
+  );
+  assert.match(captured, /PAGES VISITED/);
+  assert.match(captured, /runs\/1/);
+  assert.match(captured, /failed/);
 });
 
 test("caps the bulleted detail at the top 5 but keeps all issues in evidence", async () => {

@@ -500,6 +500,13 @@ async function runMission(
         // step instead of two.
         let carriedObs = await observe(session.page);
         let lastObs = carriedObs;
+        // Per-page snapshots accumulated as the agent navigates, so the judge
+        // can spot data the app presents inconsistently ACROSS views (a run
+        // "success" in the list but "failed" on its detail). Deduped + capped at
+        // judge time; text is trimmed per page to bound the prompt.
+        const pageTrail: { url: string; text: string }[] = [
+          { url: carriedObs.url, text: carriedObs.visibleText.slice(0, 700) },
+        ];
         // Run the load-time oracles on the start-page batch (captured above),
         // attributed to the page as "Loaded <startPath>" rather than to any agent
         // action. A clean start page yields nothing (the existing agent cases load
@@ -634,6 +641,10 @@ async function runMission(
           const postObs = await observe(session.page);
           lastObs = postObs;
           carriedObs = postObs; // reuse as next step's pre-decision observation
+          pageTrail.push({
+            url: postObs.url,
+            text: postObs.visibleText.slice(0, 700),
+          });
           const diff = diffProgress(obs, postObs);
 
           // Record only a SUCCESSFULLY-executed action, so a stale/failed step
@@ -772,6 +783,7 @@ async function runMission(
             },
             knowledge,
             opts.mutedExclusions,
+            pageTrail,
           );
           for (const f of judgeFindings) record(f);
           if (
