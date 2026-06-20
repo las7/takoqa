@@ -300,6 +300,7 @@ export type FindingKind =
   | "body_error_signature"
   | "goal_failed" // LLM judge: user could not accomplish the goal
   | "ux_issue" // LLM judge: completed but degraded experience
+  | "inconsistency" // LLM judge: the app presents the same data or UI inconsistently (a count that ≠ rows shown, status differing across views, mixed date/number formatting, inconsistent terminology/styling)
   | "agent_stuck" // ran out of steps without resolution
   | "no_progress" // same action repeated with no observable effect (dead control / loop)
   | "occluded_control" // a visible, surfaced control is covered by another element and can't be clicked

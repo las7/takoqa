@@ -497,6 +497,59 @@ test("on goal_failed, drops ux_issues that merely restate the failure", async ()
   );
 });
 
+test("emits ONE consolidated `inconsistency` finding, distinct from ux_issue", async () => {
+  const llm = judgeStub({
+    goalMet: true,
+    severity: "low",
+    issues: [],
+    inconsistencies: [
+      'header says "12 runs" but only 8 rows are shown',
+      'the run is "success" in the list but "failed" on its detail page',
+      'dates appear as both "2026-06-20" and "Jun 20, 2026"',
+    ],
+    rationale: "the app contradicts its own data",
+  });
+  const findings = await judgeMission(llm, mission, obs("dashboard"), [], base);
+  const inc = findings.filter((f) => f.kind === "inconsistency");
+  assert.equal(inc.length, 1, "multiple inconsistencies → one finding");
+  assert.match(inc[0]!.title, /3 data\/UI inconsistencies/);
+  assert.match(inc[0]!.detail, /12 runs/);
+  assert.match(inc[0]!.evidence ?? "", /Jun 20, 2026/);
+  assert.ok(
+    !findings.some((f) => f.kind === "ux_issue"),
+    "consistency defects are NOT folded into ux_issue",
+  );
+});
+
+test("no `inconsistency` finding when the judge reports none / omits the field", async () => {
+  const none = judgeStub({
+    goalMet: true,
+    severity: "low",
+    issues: [],
+    inconsistencies: [],
+    rationale: "ok",
+  });
+  assert.equal(
+    (await judgeMission(none, mission, obs("ok"), [], base)).filter(
+      (f) => f.kind === "inconsistency",
+    ).length,
+    0,
+  );
+  // Back-compat: a verdict that omits the field entirely defaults to none.
+  const legacy = judgeStub({
+    goalMet: true,
+    severity: "low",
+    issues: [],
+    rationale: "ok",
+  });
+  assert.equal(
+    (await judgeMission(legacy, mission, obs("ok"), [], base)).filter(
+      (f) => f.kind === "inconsistency",
+    ).length,
+    0,
+  );
+});
+
 test("caps the bulleted detail at the top 5 but keeps all issues in evidence", async () => {
   const issues = [
     "issue one",
