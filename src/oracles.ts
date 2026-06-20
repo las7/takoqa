@@ -596,6 +596,8 @@ interface JudgeVerdict {
   goalMet: boolean;
   severity: Severity;
   issues: string[];
+  /** Data-model + UI consistency defects (distinct from generic UX issues). */
+  inconsistencies: string[];
   rationale: string;
 }
 
@@ -629,8 +631,9 @@ export async function judgeMission(
     `FINAL PAGE TEXT:\n${finalObs.visibleText.slice(0, 1500)}`,
     ``,
     `Judge against the screenshot too. Respond with ONLY a JSON object:`,
-    `{"goalMet": boolean, "severity": "critical"|"high"|"medium"|"low", "issues": string[], "rationale": string}`,
+    `{"goalMet": boolean, "severity": "critical"|"high"|"medium"|"low", "issues": string[], "inconsistencies": string[], "rationale": string}`,
     `"issues" lists UX or quality problems even if the goal was met (confusing flow, slow, wrong output, broken layout).`,
+    `"inconsistencies" lists places the app presents the SAME data or UI inconsistently — report only contradictions you can actually see, with the two conflicting values. Examples: a count/stat that doesn't match the rows or items actually shown ("12 runs" but 8 rows); the same entity showing a different value or status across views (a run "success" in the list but "failed" on its detail); a value attributed differently in two places (a run's model "gpt-4o" here, "claude" there); mixed formatting of the same data type on one page (dates as "2026-06-20" and "Jun 20, 2026"); the same concept labeled with different terms ("Runs" vs "Executions"); inconsistent component styling/state for equivalent controls. Empty array if you see none — do not speculate.`,
     `Do NOT report development-only framework chrome as a product defect: a small "N Issue(s)" error-count badge in a corner is the dev toolbar/overlay, and hydration/console warnings shown only in dev builds are not user-facing bugs. Judge the product, not the dev environment.`,
     knowledge ? renderKnowledge(knowledge, { forJudge: true }) : ``,
     extraExclusions && extraExclusions.length
@@ -690,6 +693,31 @@ export async function judgeMission(
       // Full list kept in evidence so run.json retains every issue even when the
       // human-readable detail truncates to the top few.
       evidence: issues.join("\n"),
+      url: finalObs.url,
+      timestamp: now,
+    });
+  }
+
+  // Data-model + UI consistency defects, consolidated like ux_issue. Kept as a
+  // distinct kind (not folded into ux_issue) so "the app contradicts its own
+  // data" is triaged and baseline-tracked separately from generic UX polish.
+  if (verdict.inconsistencies.length) {
+    const top = verdict.inconsistencies.slice(0, MAX_UX_ISSUES);
+    const more = verdict.inconsistencies.length - top.length;
+    const detail = [
+      ...top.map((i) => `• ${i}`),
+      ...(more > 0 ? [`• …and ${more} more`] : []),
+    ].join("\n");
+    findings.push({
+      kind: "inconsistency",
+      severity: "medium",
+      ...base,
+      title:
+        verdict.inconsistencies.length === 1
+          ? `Data/UI inconsistency`
+          : `${verdict.inconsistencies.length} data/UI inconsistencies`,
+      detail,
+      evidence: verdict.inconsistencies.join("\n"),
       url: finalObs.url,
       timestamp: now,
     });
@@ -765,6 +793,9 @@ function parseVerdict(raw: string): JudgeVerdict {
         ? json.severity
         : "medium",
       issues: Array.isArray(json.issues) ? json.issues.map(String) : [],
+      inconsistencies: Array.isArray(json.inconsistencies)
+        ? json.inconsistencies.map(String)
+        : [],
       rationale: String(json.rationale ?? ""),
     };
   } catch {
@@ -772,6 +803,7 @@ function parseVerdict(raw: string): JudgeVerdict {
       goalMet: false,
       severity: "medium",
       issues: [],
+      inconsistencies: [],
       rationale: `Could not parse judge response: ${raw.slice(0, 200)}`,
     };
   }

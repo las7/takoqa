@@ -70,6 +70,7 @@ export const KIND_CLASS: Record<FindingKind, "detector" | "judgment"> = {
   verbose_error: "detector",
   goal_failed: "judgment",
   ux_issue: "judgment",
+  inconsistency: "judgment",
   agent_stuck: "judgment",
 };
 
