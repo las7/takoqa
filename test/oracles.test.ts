@@ -9,11 +9,14 @@ import {
   checkInvariants,
   judgeMission,
   pagesForJudge,
+  verifyFindings,
+  parseSkeptic,
 } from "../src/oracles.js";
 import type { LLMClient } from "../src/agent.js";
 import type { CapturedEvents } from "../src/browser.js";
 import type { Observation } from "../src/observe.js";
 import { InvariantsSchema, MissionSchema } from "../src/types.js";
+import type { Finding, FindingKind } from "../src/types.js";
 
 const inv = (overrides = {}) => InvariantsSchema.parse(overrides);
 
@@ -705,4 +708,54 @@ test("a short distinct issue is not suppressed as a restatement", async () => {
     1,
     "short issues should not be dropped by the heuristic",
   );
+});
+
+// ── adversarial verify ──────────────────────────────────────────────────────
+
+const mkFinding = (kind: FindingKind, title = "t"): Finding => ({
+  kind,
+  severity: "medium",
+  missionId: "m1",
+  persona: "p1",
+  title,
+  detail: "detail",
+  repro: [],
+  url: "https://x/",
+  timestamp: "2026-01-01T00:00:00.000Z",
+});
+
+test("parseSkeptic: explicit refuted drops, real keeps, garbage keeps", () => {
+  assert.equal(parseSkeptic('{"verdict":"refuted","why":"none"}').real, false);
+  assert.equal(parseSkeptic('{"verdict":"real","why":"ok"}').real, true);
+  assert.equal(
+    parseSkeptic("the model rambled without JSON").real,
+    true,
+    "unparseable reply must not silently drop a finding",
+  );
+});
+
+test("verifyFindings drops a refuted judgment finding, passes deterministic through", async () => {
+  const findings = [
+    mkFinding("ux_issue", "maybe confusing"),
+    mkFinding("insecure_headers", "missing CSP"),
+  ];
+  const r = await verifyFindings(
+    judgeStub({ verdict: "refuted", why: "no evidence" }),
+    findings,
+    obs("the page looks fine"),
+  );
+  assert.equal(r.kept.length, 1, "deterministic finding survives");
+  assert.equal(r.kept[0]!.kind, "insecure_headers");
+  assert.equal(r.dropped.length, 1, "the ux_issue was refuted");
+  assert.equal(r.dropped[0]!.finding.kind, "ux_issue");
+});
+
+test("verifyFindings keeps a judgment finding the skeptic confirms", async () => {
+  const r = await verifyFindings(
+    judgeStub({ verdict: "real", why: "the count clearly mismatches" }),
+    [mkFinding("inconsistency", "5 stated, 3 shown")],
+    obs("Total: 5 — but only 3 rows"),
+  );
+  assert.equal(r.kept.length, 1);
+  assert.equal(r.dropped.length, 0);
 });

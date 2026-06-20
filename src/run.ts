@@ -85,6 +85,8 @@ interface Args {
   matrix: boolean;
   /** Enable the attacker lever (bounded active security probes) on a normal/loop run. */
   security: boolean;
+  /** Adversarial verify: skeptic-check each LLM-judge finding, drop the indefensible ones. */
+  verify: boolean;
   /** Path to a server log file to correlate tracebacks onto 5xx/crash findings. */
   serverLog?: string;
   /** Standalone: diff two prior runs (dirs or run.json paths) and exit. */
@@ -109,6 +111,7 @@ function parseArgs(argv: string[]): Args {
     loop: false,
     matrix: false,
     security: false,
+    verify: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -147,6 +150,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--budget-steps") args.budgetSteps = Number(argv[++i]);
     else if (a === "--matrix") args.matrix = true;
     else if (a === "--security") args.security = true;
+    else if (a === "--verify") args.verify = true;
     else if (a === "--server-log") args.serverLog = argv[++i];
     else if (a === "--compare")
       args.compare = [argv[++i] ?? "", argv[++i] ?? ""];
@@ -411,6 +415,7 @@ async function main(): Promise<void> {
         record: args.record,
         onlyTag: args.tag,
         recipesDir: args.replay ? args.recipesDir : undefined,
+        verify: args.verify,
         baselineDir: args.baseline ? args.baselineDir : undefined,
         // The learned ratchet rides along with --baseline (both are the run's
         // "memory"): with neither, this path is byte-identical to before. On a
@@ -431,6 +436,7 @@ async function main(): Promise<void> {
         runDir,
         headless: !args.headed,
         record: args.record,
+        verify: args.verify,
         baselineDir: args.baselineDir,
         // --loop is the self-improvement path by definition, so it always
         // engages the learned ratchet (read at start, distilled + persisted at

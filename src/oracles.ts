@@ -616,6 +616,93 @@ export function pagesForJudge(
   return [...byUrl.values()].slice(-max);
 }
 
+/** The soft, opinion-shaped findings the LLM judge emits — the ones worth a
+ *  second, skeptical look. Deterministic findings (headers, a11y, http errors,
+ *  agent_stuck) are high-precision facts and pass through verify untouched. */
+const JUDGMENT_KINDS = new Set<FindingKind>([
+  "goal_failed",
+  "ux_issue",
+  "inconsistency",
+]);
+
+export interface VerifyResult {
+  kept: Finding[];
+  dropped: { finding: Finding; why: string }[];
+}
+
+function skepticPrompt(f: Finding, visibleText: string): string {
+  return [
+    `You are a skeptical staff engineer doing the final review before a QA finding is filed as a bug. REFUTE it unless it is concretely supported by what is actually on the page. Reject speculation, agent limitations, expected behavior, and vague "could confuse users" claims with no evidence.`,
+    ``,
+    `FINDING [${f.kind}, ${f.severity}]: ${f.title}`,
+    `DETAIL: ${f.detail}`,
+    f.evidence ? `EVIDENCE: ${f.evidence}` : ``,
+    ``,
+    `WHAT IS ACTUALLY ON THE PAGE (visible text):`,
+    visibleText.slice(0, 1500),
+    ``,
+    `Is this a REAL, defensible defect with concrete support visible here? Default to "refuted" if the evidence is hedged, missing, or the claim is speculative.`,
+    `Respond with ONLY one JSON object: {"verdict":"real"|"refuted","why":"one short sentence"}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Parse the skeptic verdict. Only an EXPLICIT "refuted" drops a finding — an
+ *  unparseable or ambiguous reply keeps it (a parse bug must not silently lose
+ *  real findings; the model is the one told to refute on doubt, not us). */
+export function parseSkeptic(raw: string): { real: boolean; why: string } {
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (m) {
+    try {
+      const json = JSON.parse(m[0]) as { verdict?: string; why?: string };
+      const v = String(json.verdict ?? "").toLowerCase();
+      if (v === "refuted") return { real: false, why: String(json.why ?? "") };
+      if (v === "real") return { real: true, why: String(json.why ?? "") };
+    } catch {
+      /* fall through to keep */
+    }
+  }
+  return { real: true, why: "" };
+}
+
+/**
+ * Adversarial verify — the precision pass. A skeptic re-reads each judgment-tier
+ * finding and tries to REFUTE it against the same page; findings it can't defend
+ * are dropped. Built because the consistency oracle (and ~half of triage on real
+ * sites) surfaced plausible-but-hedged findings that erode trust in the report.
+ * Deterministic findings pass through untouched. Opt-in (one extra judge call per
+ * judgment finding), so cost is paid only when precision matters.
+ */
+export async function verifyFindings(
+  llm: LLMClient,
+  findings: Finding[],
+  finalObs: Pick<Observation, "visibleText" | "screenshotBase64">,
+): Promise<VerifyResult> {
+  const kept: Finding[] = [];
+  const dropped: { finding: Finding; why: string }[] = [];
+  for (const f of findings) {
+    if (!JUDGMENT_KINDS.has(f.kind)) {
+      kept.push(f);
+      continue;
+    }
+    let verdict: { real: boolean; why: string };
+    try {
+      const raw = await llm.judge(
+        skepticPrompt(f, finalObs.visibleText),
+        finalObs.screenshotBase64,
+      );
+      verdict = parseSkeptic(raw);
+    } catch {
+      kept.push(f); // skeptic itself failed — never drop on infrastructure error
+      continue;
+    }
+    if (verdict.real) kept.push(f);
+    else dropped.push({ finding: f, why: verdict.why });
+  }
+  return { kept, dropped };
+}
+
 export async function judgeMission(
   llm: LLMClient,
   mission: Mission,

@@ -14,7 +14,7 @@ import { BrowserSession, type ResponseEvent } from "./browser.js";
 import type { LLMClient, AgentContext, Decision } from "./agent.js";
 import { actionLabel, annotateAction, executeAction } from "./act.js";
 import { captureScreenshot, observe, type Observation } from "./observe.js";
-import { checkInvariants, judgeMission } from "./oracles.js";
+import { checkInvariants, judgeMission, verifyFindings } from "./oracles.js";
 import { recordFinding } from "./findings.js";
 import {
   classifyAndUpdate,
@@ -217,6 +217,13 @@ export interface EngineOptions {
    * across access levels.
    */
   auth?: Auth;
+  /**
+   * Adversarial verify: after the LLM judge, run a skeptic over each judgment-tier
+   * finding (goal_failed / ux_issue / inconsistency) and drop the ones it can't
+   * defend against the page. One extra judge call per such finding, bought only
+   * when precision matters. Opt-in via --verify.
+   */
+  verify?: boolean;
 }
 
 export async function runProfile(
@@ -785,9 +792,21 @@ async function runMission(
             opts.mutedExclusions,
             pageTrail,
           );
-          for (const f of judgeFindings) record(f);
+          let finalJudge = judgeFindings;
+          if (opts.verify && judgeFindings.length) {
+            const vr = await verifyFindings(opts.llm, judgeFindings, lastObs);
+            finalJudge = vr.kept;
+            if (vr.dropped.length) {
+              console.log(
+                `  ↳ verify dropped ${vr.dropped.length} unverified judgment finding(s): ${vr.dropped
+                  .map((d) => d.finding.kind)
+                  .join(", ")}`,
+              );
+            }
+          }
+          for (const f of finalJudge) record(f);
           if (
-            judgeFindings.some((f) => f.kind === "goal_failed") &&
+            finalJudge.some((f) => f.kind === "goal_failed") &&
             outcome === "passed"
           ) {
             outcome = "failed";
