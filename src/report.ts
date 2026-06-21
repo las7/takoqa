@@ -204,6 +204,13 @@ export function renderFindings(report: RunReport): string {
           o.exercised
         }/${o.observed} affordance(s) seen`,
       );
+      lines.push(
+        `  Meaningful surface (global nav collapsed): ${(
+          o.meaningful.coverage * 100
+        ).toFixed(0)}% — ${o.meaningful.exercised}/${o.meaningful.observed} (${
+          o.navLabels
+        } nav label(s) collapsed)`,
+      );
       if (o.truncated) {
         lines.push(
           `  (${o.truncated} affordance(s) past the per-page cap not counted — coverage reads optimistic)`,

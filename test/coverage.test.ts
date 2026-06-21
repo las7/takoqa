@@ -166,3 +166,31 @@ test("untriedAffordances respects the cap", () => {
   const out = untriedAffordances([], { url: "http://h/p", elements }, 5);
   assert.equal(out.length, 5);
 });
+
+test("global nav (label on >=3 routes) collapses to one meaningful unit", () => {
+  const c = computeObservationCoverage([
+    mission([
+      step("http://h/a", [aff(0, { label: "Nav" }), aff(1, { label: "Save" })], [0]),
+      step("http://h/b", [aff(0, { label: "Nav" })], []),
+      step("http://h/c", [aff(0, { label: "Nav" })], []),
+    ]),
+  ]);
+  // raw: Nav@a, Nav@b, Nav@c, Save@a = 4 distinct; only Nav@a exercised.
+  assert.equal(c.observed, 4);
+  assert.equal(c.coverage, 0.25);
+  // meaningful: Nav collapses to 1 (exercised on a), Save@a = 1 (not) → 1/2.
+  assert.equal(c.navLabels, 1);
+  assert.deepEqual(c.meaningful, { observed: 2, exercised: 1, coverage: 0.5 });
+});
+
+test("a label on only 2 routes is not nav — meaningful equals raw", () => {
+  const c = computeObservationCoverage([
+    mission([
+      step("http://h/a", [aff(0, { label: "X" })], [0]),
+      step("http://h/b", [aff(0, { label: "X" })], []),
+    ]),
+  ]);
+  assert.equal(c.navLabels, 0);
+  assert.equal(c.meaningful.observed, c.observed);
+  assert.equal(c.meaningful.coverage, c.coverage);
+});

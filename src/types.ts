@@ -428,6 +428,14 @@ export interface ObservationCoverage {
   frontier: { route: string; role: string; label: string }[];
   /** Full count of seen-but-never-tried affordances (frontier may be truncated). */
   frontierTotal: number;
+  /**
+   * Coverage of the MEANINGFUL surface: global navigation (a label repeated
+   * across many routes) is collapsed to one unit, so the metric reflects
+   * distinct functionality rather than per-route nav duplication.
+   */
+  meaningful: { observed: number; exercised: number; coverage: number };
+  /** How many labels were treated as global nav (collapsed). */
+  navLabels: number;
 }
 
 export interface RunReport {

@@ -23,6 +23,9 @@ import { normalizeRoute } from "./progress.js";
 /** How many seen-but-never-tried affordances to list in the report. */
 const FRONTIER_CAP = 30;
 
+/** A label seen on at least this many routes is treated as global navigation. */
+const NAV_ROUTE_THRESHOLD = 3;
+
 export function affordanceKey(
   route: string,
   el: { role: string; label: string; cap?: string },
@@ -114,6 +117,32 @@ export function computeObservationCoverage(
     (a, b) => a.route.localeCompare(b.route) || a.label.localeCompare(b.label),
   );
 
+  // Meaningful surface: collapse global navigation (a label that shows up on
+  // NAV_ROUTE_THRESHOLD+ routes is repeated nav, not distinct functionality) to a
+  // single route-agnostic unit, so coverage isn't deflated by per-route nav dupes.
+  // This is a metric-layer view only — the per-affordance keys above (and the
+  // cross-run store) keep their stable route-scoped keys.
+  const labelRoutes = new Map<string, Set<string>>();
+  for (const d of observed.values()) {
+    let s = labelRoutes.get(d.label);
+    if (!s) labelRoutes.set(d.label, (s = new Set()));
+    s.add(d.route);
+  }
+  const isNav = (label: string): boolean =>
+    (labelRoutes.get(label)?.size ?? 0) >= NAV_ROUTE_THRESHOLD;
+  const unit = (key: string, d: { role: string; label: string }): string =>
+    isNav(d.label) ? `nav|${d.role}|${d.label}` : key;
+  const mObserved = new Set<string>();
+  for (const [k, d] of observed) mObserved.add(unit(k, d));
+  const mExercised = new Set<string>();
+  for (const k of exercised) {
+    const d = observed.get(k);
+    if (d) mExercised.add(unit(k, d));
+  }
+  const navLabels = [...labelRoutes.values()].filter(
+    (s) => s.size >= NAV_ROUTE_THRESHOLD,
+  ).length;
+
   return {
     coverage,
     observed: observedCount,
@@ -122,6 +151,12 @@ export function computeObservationCoverage(
     unlabeled,
     frontier: frontier.slice(0, FRONTIER_CAP),
     frontierTotal: frontier.length,
+    meaningful: {
+      observed: mObserved.size,
+      exercised: mExercised.size,
+      coverage: mObserved.size === 0 ? 1 : mExercised.size / mObserved.size,
+    },
+    navLabels,
   };
 }
 
