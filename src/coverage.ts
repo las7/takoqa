@@ -16,6 +16,7 @@ import type {
   MissionResult,
   ObservationCoverage,
   ObservedAffordance,
+  ObservedSurface,
 } from "./types.js";
 import { normalizeRoute } from "./progress.js";
 
@@ -24,6 +25,42 @@ const FRONTIER_CAP = 30;
 
 function keyOf(route: string, el: ObservedAffordance): string {
   return `${route}|${el.role}|${el.label}|${el.cap ?? ""}`;
+}
+
+/**
+ * Labeled controls visible on the current page that haven't been acted on yet
+ * this mission — surfaced live to the agent so it exhausts the page instead of
+ * finishing the moment its goal is met. Keyed stably (route|role|label|cap), so
+ * a control isn't "untried" once exercised under a different positional ref.
+ */
+export function untriedAffordances(
+  steps: { observed?: ObservedSurface }[],
+  current: { url: string; elements: ObservedAffordance[] },
+  cap = 15,
+): { label: string; role: string; cap?: string }[] {
+  const route = normalizeRoute(current.url);
+  const acted = new Set<string>();
+  for (const s of steps) {
+    const o = s.observed;
+    if (!o || normalizeRoute(o.url) !== route) continue;
+    const byRef = new Map<number, ObservedAffordance>();
+    for (const el of o.elements) byRef.set(el.ref, el);
+    for (const ref of o.actedRefs) {
+      const el = byRef.get(ref);
+      if (el?.label) acted.add(keyOf(route, el));
+    }
+  }
+  const out: { label: string; role: string; cap?: string }[] = [];
+  const seen = new Set<string>();
+  for (const el of current.elements) {
+    if (!el.label) continue;
+    const k = keyOf(route, el);
+    if (acted.has(k) || seen.has(k)) continue;
+    seen.add(k);
+    out.push({ label: el.label, role: el.role, ...(el.cap ? { cap: el.cap } : {}) });
+    if (out.length >= cap) break;
+  }
+  return out;
 }
 
 export function computeObservationCoverage(

@@ -26,6 +26,12 @@ export interface AgentContext {
   knowledge?: Knowledge;
   /** Known routes not yet visited this mission — to bias exploration. */
   frontier?: string[];
+  /**
+   * Labeled controls visible on the current page that the agent hasn't acted on
+   * yet this mission — to bias it toward exhausting the page's surface instead
+   * of finishing the moment its goal is met. Recomputed each step.
+   */
+  affordanceFrontier?: { label: string; role: string; cap?: string }[];
 }
 
 export interface LLMClient {
@@ -64,6 +70,11 @@ export function systemPrompt(ctx: AgentContext): string {
       : ``,
     ctx.frontier && ctx.frontier.length
       ? `AREAS NOT YET VISITED this run (prefer these if you are exploring): ${ctx.frontier.join(", ")}`
+      : ``,
+    ctx.affordanceFrontier && ctx.affordanceFrontier.length
+      ? `CONTROLS ON THIS PAGE YOU HAVEN'T TRIED YET — if your goal is already met, exercise these before finishing so more of the page is covered: ${ctx.affordanceFrontier
+          .map((a) => a.label)
+          .join(", ")}`
       : ``,
     ``,
     `Each turn you receive the page state and a screenshot. Call the "act" tool with exactly one action.`,

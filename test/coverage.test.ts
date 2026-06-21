@@ -4,7 +4,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeObservationCoverage } from "../src/coverage.js";
+import {
+  computeObservationCoverage,
+  untriedAffordances,
+} from "../src/coverage.js";
 import type {
   MissionResult,
   ObservedAffordance,
@@ -122,4 +125,44 @@ test("truncated counts sum across steps", () => {
     ]),
   ]);
   assert.equal(c.truncated, 8);
+});
+
+test("untriedAffordances returns visible controls not yet acted on this page", () => {
+  const prior = [step("http://h/p", [aff(0, { label: "A" }), aff(1, { label: "B" })], [0])];
+  const out = untriedAffordances(prior, {
+    url: "http://h/p",
+    elements: [aff(0, { label: "A" }), aff(1, { label: "B" }), aff(2, { label: "C" })],
+  });
+  assert.deepEqual(
+    out.map((a) => a.label).sort(),
+    ["B", "C"],
+  );
+});
+
+test("untriedAffordances excludes a control acted under a different ref (stable key)", () => {
+  // acted on "Save" as ref 0 earlier; now it's ref 7 — still counts as tried.
+  const prior = [step("http://h/p", [aff(0, { label: "Save" })], [0])];
+  const out = untriedAffordances(prior, {
+    url: "http://h/p",
+    elements: [aff(7, { label: "Save" })],
+  });
+  assert.deepEqual(out, []);
+});
+
+test("untriedAffordances ignores acts on other routes and unlabeled controls", () => {
+  const prior = [step("http://h/other", [aff(0, { label: "X" })], [0])];
+  const out = untriedAffordances(prior, {
+    url: "http://h/p",
+    elements: [aff(0, { label: "X" }), aff(1, { label: "" })],
+  });
+  assert.deepEqual(
+    out.map((a) => a.label),
+    ["X"],
+  );
+});
+
+test("untriedAffordances respects the cap", () => {
+  const elements = Array.from({ length: 20 }, (_, i) => aff(i, { label: `c${i}` }));
+  const out = untriedAffordances([], { url: "http://h/p", elements }, 5);
+  assert.equal(out.length, 5);
 });

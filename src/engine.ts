@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { BrowserSession, type ResponseEvent } from "./browser.js";
 import type { LLMClient, AgentContext, Decision } from "./agent.js";
 import { actionLabel, actionRefs, annotateAction, executeAction } from "./act.js";
-import { computeObservationCoverage } from "./coverage.js";
+import { computeObservationCoverage, untriedAffordances } from "./coverage.js";
 import { captureScreenshot, observe, type Observation } from "./observe.js";
 import { checkInvariants, judgeMission, verifyFindings } from "./oracles.js";
 import { recordFinding } from "./findings.js";
@@ -582,12 +582,17 @@ async function runMission(
                 (r) => !visitedRoutes.has(r) && !r.includes("["),
               )
             : undefined;
+          // Live affordance frontier: labeled controls visible now that haven't
+          // been exercised yet this mission — biases the agent to exhaust the
+          // page's surface instead of finishing the instant its goal is met.
+          const untried = untriedAffordances(steps, obs);
           const ctx: AgentContext = {
             persona,
             mission,
             history,
             knowledge,
             frontier,
+            affordanceFrontier: untried.length ? untried : undefined,
           };
           let decision = replaying
             ? recipeDecision(recipe, replayCursor, obs)
