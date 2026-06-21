@@ -13,7 +13,17 @@ import { join } from "node:path";
 import { BrowserSession, type ResponseEvent } from "./browser.js";
 import type { LLMClient, AgentContext, Decision } from "./agent.js";
 import { actionLabel, actionRefs, annotateAction, executeAction } from "./act.js";
-import { computeObservationCoverage, untriedAffordances } from "./coverage.js";
+import {
+  affordanceKey,
+  computeObservationCoverage,
+  untriedAffordances,
+} from "./coverage.js";
+import {
+  historicalExercisedKeys,
+  loadCoverage,
+  mergeRunCoverage,
+  saveCoverage,
+} from "./coverageStore.js";
 import { captureScreenshot, observe, type Observation } from "./observe.js";
 import { checkInvariants, judgeMission, verifyFindings } from "./oracles.js";
 import { recordFinding } from "./findings.js";
@@ -213,6 +223,13 @@ export interface EngineOptions {
    */
   learnedDir?: string;
   /**
+   * Directory for the per-profile cross-run coverage memory. When set, the run
+   * loads which affordances have ever been exercised and tells the agent which
+   * visible controls have NEVER been tried (in this or any past run), then folds
+   * this run's coverage back in. Absent = no cross-run memory. See coverageStore.ts.
+   */
+  coverageMemDir?: string;
+  /**
    * Auth strategy for the browser session. Defaults to the profile's auth (or
    * "none"). The tier/auth matrix overrides this per variant to diff the app
    * across access levels.
@@ -250,6 +267,15 @@ export async function runProfile(
     ? loadBaseline(opts.baselineDir, profile.name)
     : null;
   const muted = baseline ? mutedExclusions(baseline) : [];
+  // Cross-run coverage memory: which affordances were ever exercised before, so
+  // the agent can be told what's never been tried. Loaded up front; this run is
+  // folded back in (and persisted) at the end.
+  const coverageMem = opts.coverageMemDir
+    ? loadCoverage(opts.coverageMemDir, profile.name)
+    : null;
+  const historicalExercised = coverageMem
+    ? historicalExercisedKeys(coverageMem)
+    : undefined;
   const effectiveKnowledge = opts.learnedDir
     ? mergeLearned(
         profile.knowledge,
@@ -284,6 +310,7 @@ export async function runProfile(
           fixtureResolver,
           auth: opts.auth ?? profile.auth,
           mutedExclusions: muted,
+          historicalExercised,
         },
       ),
     );
@@ -317,6 +344,17 @@ export async function runProfile(
     }
   }
 
+  // Fold this run's coverage into the cross-run memory so the next run knows
+  // what's still never been exercised.
+  if (coverageMem && opts.coverageMemDir) {
+    mergeRunCoverage(coverageMem, results, new Date().toISOString());
+    try {
+      saveCoverage(opts.coverageMemDir, profile.name, coverageMem);
+    } catch {
+      /* coverage memory persistence is best-effort */
+    }
+  }
+
   return {
     profile: profile.name,
     baseUrl: profile.baseUrl,
@@ -344,6 +382,8 @@ async function runMission(
     fixtureResolver: (n: string) => string;
     /** Operator-vetted muted-finding notes fed to the judge as exclusions. */
     mutedExclusions?: string[];
+    /** Affordance keys exercised in some past run (cross-run coverage memory). */
+    historicalExercised?: Set<string>;
   },
 ): Promise<MissionResult> {
   const startedAt = new Date().toISOString();
@@ -586,6 +626,14 @@ async function runMission(
           // been exercised yet this mission — biases the agent to exhaust the
           // page's surface instead of finishing the instant its goal is met.
           const untried = untriedAffordances(steps, obs);
+          // Cross-run memory: of those, the ones never exercised in ANY past run
+          // — the standing coverage gaps to prioritize.
+          const obsRoute = normalizeRoute(obs.url);
+          const neverEver = opts.historicalExercised
+            ? untried.filter(
+                (a) => !opts.historicalExercised!.has(affordanceKey(obsRoute, a)),
+              )
+            : [];
           const ctx: AgentContext = {
             persona,
             mission,
@@ -593,6 +641,9 @@ async function runMission(
             knowledge,
             frontier,
             affordanceFrontier: untried.length ? untried : undefined,
+            neverTriedEver: neverEver.length
+              ? neverEver.map((a) => a.label)
+              : undefined,
           };
           let decision = replaying
             ? recipeDecision(recipe, replayCursor, obs)

@@ -32,6 +32,11 @@ export interface AgentContext {
    * of finishing the moment its goal is met. Recomputed each step.
    */
   affordanceFrontier?: { label: string; role: string; cap?: string }[];
+  /**
+   * Labels of visible controls never exercised in ANY past run (cross-run
+   * coverage memory) — standing gaps to prioritize over already-covered controls.
+   */
+  neverTriedEver?: string[];
 }
 
 export interface LLMClient {
@@ -75,6 +80,11 @@ export function systemPrompt(ctx: AgentContext): string {
       ? `CONTROLS ON THIS PAGE YOU HAVEN'T TRIED YET — if your goal is already met, exercise these before finishing so more of the page is covered: ${ctx.affordanceFrontier
           .map((a) => a.label)
           .join(", ")}`
+      : ``,
+    ctx.neverTriedEver && ctx.neverTriedEver.length
+      ? `NEVER EXERCISED IN ANY PAST RUN of this app (standing coverage gaps — prioritize these): ${ctx.neverTriedEver.join(
+          ", ",
+        )}`
       : ``,
     ``,
     `Each turn you receive the page state and a screenshot. Call the "act" tool with exactly one action.`,

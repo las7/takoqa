@@ -23,7 +23,10 @@ import { normalizeRoute } from "./progress.js";
 /** How many seen-but-never-tried affordances to list in the report. */
 const FRONTIER_CAP = 30;
 
-function keyOf(route: string, el: ObservedAffordance): string {
+export function affordanceKey(
+  route: string,
+  el: { role: string; label: string; cap?: string },
+): string {
   return `${route}|${el.role}|${el.label}|${el.cap ?? ""}`;
 }
 
@@ -47,14 +50,14 @@ export function untriedAffordances(
     for (const el of o.elements) byRef.set(el.ref, el);
     for (const ref of o.actedRefs) {
       const el = byRef.get(ref);
-      if (el?.label) acted.add(keyOf(route, el));
+      if (el?.label) acted.add(affordanceKey(route, el));
     }
   }
   const out: { label: string; role: string; cap?: string }[] = [];
   const seen = new Set<string>();
   for (const el of current.elements) {
     if (!el.label) continue;
-    const k = keyOf(route, el);
+    const k = affordanceKey(route, el);
     if (acted.has(k) || seen.has(k)) continue;
     seen.add(k);
     out.push({ label: el.label, role: el.role, ...(el.cap ? { cap: el.cap } : {}) });
@@ -86,7 +89,7 @@ export function computeObservationCoverage(
           unlabeled++;
           continue; // labeled-only metric
         }
-        const k = keyOf(route, el);
+        const k = affordanceKey(route, el);
         if (!observed.has(k)) {
           observed.set(k, { route, role: el.role, label: el.label });
         }
@@ -94,7 +97,7 @@ export function computeObservationCoverage(
       for (const ref of o.actedRefs) {
         const el = byRef.get(ref);
         if (!el || !el.label) continue; // coordinate/unlabeled target: not counted
-        exercised.add(keyOf(route, el));
+        exercised.add(affordanceKey(route, el));
       }
     }
   }
@@ -120,4 +123,46 @@ export function computeObservationCoverage(
     frontier: frontier.slice(0, FRONTIER_CAP),
     frontierTotal: frontier.length,
   };
+}
+
+export interface RunAffordance {
+  key: string;
+  route: string;
+  role: string;
+  label: string;
+  /** Whether the agent acted on this affordance during the run. */
+  exercised: boolean;
+}
+
+/**
+ * Distinct labeled affordances observed across a run, each flagged whether the
+ * agent acted on it — the unit folded into cross-run coverage memory
+ * (coverageStore.ts) so later runs know what's never been exercised.
+ */
+export function runAffordances(results: MissionResult[]): RunAffordance[] {
+  const observed = new Map<string, { route: string; role: string; label: string }>();
+  const exercised = new Set<string>();
+  for (const r of results) {
+    for (const s of r.steps) {
+      const o = s.observed;
+      if (!o) continue;
+      const route = normalizeRoute(o.url);
+      const byRef = new Map<number, ObservedAffordance>();
+      for (const el of o.elements) {
+        byRef.set(el.ref, el);
+        if (!el.label) continue;
+        const k = affordanceKey(route, el);
+        if (!observed.has(k)) observed.set(k, { route, role: el.role, label: el.label });
+      }
+      for (const ref of o.actedRefs) {
+        const el = byRef.get(ref);
+        if (el?.label) exercised.add(affordanceKey(route, el));
+      }
+    }
+  }
+  return [...observed].map(([key, d]) => ({
+    key,
+    ...d,
+    exercised: exercised.has(key),
+  }));
 }

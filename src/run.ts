@@ -62,6 +62,9 @@ interface Args {
   baselineDir: string;
   /** Directory for the per-profile learned-knowledge store (self-improvement). */
   learnedDir: string;
+  /** Persist + reuse cross-run coverage memory (which affordances were ever exercised). */
+  coverageMem: boolean;
+  coverageMemDir: string;
   /** Standalone: mute a baseline fingerprint (with an optional --as reason), then exit. */
   mute?: string;
   muteReason?: string;
@@ -107,6 +110,8 @@ function parseArgs(argv: string[]): Args {
     baseline: false,
     baselineDir: process.env.QA_AGENT_BASELINE_DIR ?? "baseline",
     learnedDir: process.env.QA_AGENT_LEARNED_DIR ?? "learned",
+    coverageMem: false,
+    coverageMemDir: process.env.QA_AGENT_COVERAGE_DIR ?? "coverage-mem",
     explore: false,
     loop: false,
     matrix: false,
@@ -131,6 +136,9 @@ function parseArgs(argv: string[]): Args {
       args.baselineDir = argv[++i] ?? args.baselineDir;
     else if (a === "--learned-dir")
       args.learnedDir = argv[++i] ?? args.learnedDir;
+    else if (a === "--coverage-mem") args.coverageMem = true;
+    else if (a === "--coverage-mem-dir")
+      args.coverageMemDir = argv[++i] ?? args.coverageMemDir;
     else if (a === "--mute") args.mute = argv[++i];
     else if (a === "--as") args.muteReason = argv[++i];
     else if (a === "--discover") args.discover = argv[++i];
@@ -422,6 +430,7 @@ async function main(): Promise<void> {
         // non-loop --explore run the store is consumed read-only (there's no
         // loop journal to distill back); only --loop persists new learnings.
         learnedDir: args.baseline ? args.learnedDir : undefined,
+        coverageMemDir: args.coverageMem ? args.coverageMemDir : undefined,
       });
 
   // Autonomous creative loop: the planner proposes fresh missions each round
