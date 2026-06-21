@@ -33,7 +33,7 @@
     "typecheck": "tsc --noEmit",
     "run": "tsx src/run.ts",
     "example": "tsx src/run.ts --profile profiles/example.yaml",
-    "test": "node --import tsx --test test/oracles.test.ts test/engine.test.ts test/report.test.ts test/knowledge.test.ts test/findings.test.ts test/agent.test.ts test/progress.test.ts test/baseline.test.ts test/learned.test.ts test/discover.test.ts test/explore.test.ts test/planner.test.ts test/exploreLoop.test.ts test/matrix.test.ts test/security.test.ts test/authz-differential.test.ts test/routeSource.test.ts test/selfeval.test.ts test/evalLedger.test.ts test/metaeval.test.ts test/observe.test.ts test/act.test.ts test/serverLog.test.ts test/compare.test.ts test/interactions.test.ts",
+    "test": "node --import tsx --test test/oracles.test.ts test/engine.test.ts test/report.test.ts test/knowledge.test.ts test/findings.test.ts test/agent.test.ts test/progress.test.ts test/baseline.test.ts test/learned.test.ts test/discover.test.ts test/explore.test.ts test/planner.test.ts test/exploreLoop.test.ts test/matrix.test.ts test/security.test.ts test/authz-differential.test.ts test/routeSource.test.ts test/selfeval.test.ts test/evalLedger.test.ts test/metaeval.test.ts test/observe.test.ts test/act.test.ts test/serverLog.test.ts test/compare.test.ts test/interactions.test.ts test/coverage.test.ts",
     "test:unit": "node --import tsx --test test/oracles.test.ts",
     "selfeval": "node --import tsx --test test/selfeval.test.ts",
     "eval": "node --import tsx test/eval.ts",

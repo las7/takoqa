@@ -12,7 +12,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BrowserSession, type ResponseEvent } from "./browser.js";
 import type { LLMClient, AgentContext, Decision } from "./agent.js";
-import { actionLabel, annotateAction, executeAction } from "./act.js";
+import { actionLabel, actionRefs, annotateAction, executeAction } from "./act.js";
+import { computeObservationCoverage } from "./coverage.js";
 import { captureScreenshot, observe, type Observation } from "./observe.js";
 import { checkInvariants, judgeMission, verifyFindings } from "./oracles.js";
 import { recordFinding } from "./findings.js";
@@ -325,6 +326,7 @@ export async function runProfile(
     coverage: {
       routesVisited: [...routesVisited].sort(),
       unvisitedKnownRoutes: unvisitedKnownRoutes.sort(),
+      observation: computeObservationCoverage(results),
     },
   };
 }
@@ -695,6 +697,19 @@ async function runMission(
             actionSummary: summary,
             rationale: decision.rationale,
             screenshotPath: shotPath,
+            // The surface the agent saw before deciding (obs, pre-action) plus
+            // the refs it touched — feeds observation-coverage measurement.
+            observed: {
+              url: obs.url,
+              elements: obs.elements.map((e) => ({
+                ref: e.ref,
+                role: e.role,
+                label: e.label,
+                ...(e.cap ? { cap: e.cap } : {}),
+              })),
+              ...(obs.truncated ? { truncated: obs.truncated } : {}),
+              actedRefs: actionRefs(decision.action),
+            },
           });
 
           const events = await session.drainEvents();

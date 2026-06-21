@@ -344,6 +344,28 @@ export interface Finding {
   status?: "new" | "known" | "muted";
 }
 
+/** One interactive element the agent saw, slimmed for coverage accounting. */
+export interface ObservedAffordance {
+  ref: number;
+  role: string;
+  label: string;
+  cap?: string;
+}
+
+/** What the agent saw on a step and which of it the action actually touched. */
+export interface ObservedSurface {
+  /**
+   * The page the elements were observed on (pre-action; may differ from the
+   * step's landed url when the action navigates).
+   */
+  url: string;
+  elements: ObservedAffordance[];
+  /** Interactive elements beyond observe's per-page cap (denominator undercount). */
+  truncated?: number;
+  /** observe-time refs this step's action targeted (a subset of `elements`). */
+  actedRefs: number[];
+}
+
 /** One observe→decide→act cycle, retained for repro and debugging. */
 export interface StepRecord {
   index: number;
@@ -366,6 +388,13 @@ export interface StepRecord {
    * mission goals in what a page actually offers (instead of inventing features).
    */
   affordances?: string[];
+  /**
+   * The interactive surface the agent saw BEFORE choosing this step's action,
+   * plus which of those refs the action targeted — raw material for
+   * observation-coverage (how much of what it saw it actually exercised).
+   * Additive: populated by the mission loop; absent in crawl-only steps.
+   */
+  observed?: ObservedSurface;
 }
 
 export interface MissionResult {
@@ -383,6 +412,24 @@ export interface MissionResult {
   finishedAt: string;
 }
 
+/** How much of the interactive surface the agent saw did it actually exercise. */
+export interface ObservationCoverage {
+  /** exercised / observed over distinct labeled affordances; 1 when none seen. */
+  coverage: number;
+  /** Distinct labeled affordances observed across the run. */
+  observed: number;
+  /** Distinct labeled affordances the agent acted on. */
+  exercised: number;
+  /** Affordances seen beyond observe's per-page cap (coverage reads optimistic). */
+  truncated: number;
+  /** Unlabeled affordances seen (excluded from the metric as unstable to key). */
+  unlabeled: number;
+  /** Seen-but-never-tried affordances, capped for display. */
+  frontier: { route: string; role: string; label: string }[];
+  /** Full count of seen-but-never-tried affordances (frontier may be truncated). */
+  frontierTotal: number;
+}
+
 export interface RunReport {
   profile: string;
   baseUrl: string;
@@ -397,5 +444,10 @@ export interface RunReport {
     routesVisited: string[];
     /** Routes the profile's knowledge block declares but the run never reached. */
     unvisitedKnownRoutes: string[];
+    /**
+     * Element-level coverage: of the affordances the agent saw, how many it
+     * exercised. Populated by mission runs; absent in crawl-only runs.
+     */
+    observation?: ObservationCoverage;
   };
 }

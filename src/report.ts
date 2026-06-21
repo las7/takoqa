@@ -197,6 +197,25 @@ export function renderFindings(report: RunReport): string {
         `  Unvisited known routes: ${cov.unvisitedKnownRoutes.join(", ")}`,
       );
     }
+    const o = cov.observation;
+    if (o) {
+      lines.push(
+        `Observation coverage: ${(o.coverage * 100).toFixed(0)}% — exercised ${
+          o.exercised
+        }/${o.observed} affordance(s) seen`,
+      );
+      if (o.truncated) {
+        lines.push(
+          `  (${o.truncated} affordance(s) past the per-page cap not counted — coverage reads optimistic)`,
+        );
+      }
+      if (o.frontier.length) {
+        lines.push(`  Seen but never tried (${o.frontierTotal}):`);
+        for (const f of o.frontier) {
+          lines.push(`    - ${f.route}  ${f.role}: ${f.label}`);
+        }
+      }
+    }
   }
   // Known-bugs baseline tally (only when --baseline classified the findings).
   if (findings.some((f) => f.status)) {
@@ -256,7 +275,13 @@ export function printSummary(report: RunReport): void {
       (s) => `${counts[s] ?? 0} ${s}`,
     ).join(", ")}${
       report.coverage
-        ? ` | coverage: ${report.coverage.routesVisited.length} route(s)`
+        ? ` | coverage: ${report.coverage.routesVisited.length} route(s)${
+            report.coverage.observation
+              ? `, ${(report.coverage.observation.coverage * 100).toFixed(
+                  0,
+                )}% of affordances seen`
+              : ""
+          }`
         : ""
     }`,
   );

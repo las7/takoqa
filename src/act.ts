@@ -29,6 +29,36 @@ export type Action =
   | { type: "key"; keys: string; ref?: number } // press a key/chord (ArrowRight, Control+a, Escape); focuses `ref` first if given
   | { type: "finish"; success: boolean; summary: string };
 
+/**
+ * The observe-time refs an action targets, if any — used by observation-coverage
+ * to mark which seen affordances were actually exercised. Coordinate gestures and
+ * non-element actions (navigate/scroll/wait/finish) target nothing and return [].
+ */
+export function actionRefs(action: Action): number[] {
+  switch (action.type) {
+    case "click":
+    case "type":
+    case "upload":
+    case "hover":
+    case "right_click":
+    case "select_option":
+    case "set_range":
+      return [action.ref];
+    case "key":
+      return action.ref !== undefined ? [action.ref] : [];
+    case "drag_and_drop":
+      return [action.from, action.to];
+    case "navigate":
+    case "scroll":
+    case "wait":
+    case "click_at":
+    case "double_click":
+    case "drag":
+    case "finish":
+      return [];
+  }
+}
+
 export interface ActionResult {
   ok: boolean;
   /** Human-readable description for the step log / repro. */
