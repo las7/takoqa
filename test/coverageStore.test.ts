@@ -13,6 +13,7 @@ import {
   saveCoverage,
   mergeRunCoverage,
   historicalExercisedKeys,
+  coverageStats,
   type CoverageMemory,
 } from "../src/coverageStore.js";
 import type {
@@ -94,4 +95,17 @@ test("load/save round-trips through disk, keyed per profile", () => {
 
 test("loading a missing store is empty, not an error", () => {
   assert.deepEqual(loadCoverage(join(tmpdir(), "nope-does-not-exist"), "x"), {});
+});
+
+test("coverageStats rolls up the campaign view", () => {
+  const mem: CoverageMemory = {};
+  mergeRunCoverage(mem, [mission([step("http://h/p", [aff(0), aff(1)], [0])])], "t1");
+  mergeRunCoverage(mem, [mission([step("http://h/p", [aff(0), aff(1)], [0])])], "t2");
+  const s = coverageStats(mem);
+  assert.equal(s.known, 2);
+  assert.equal(s.exercised, 1);
+  assert.equal(s.never, 1);
+  assert.equal(s.ratio, 0.5);
+  assert.equal(s.runs, 2);
+  assert.deepEqual(coverageStats({}), { known: 0, exercised: 0, never: 0, ratio: 1, runs: 0 });
 });

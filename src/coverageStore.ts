@@ -124,3 +124,31 @@ export function historicalExercisedKeys(mem: CoverageMemory): Set<string> {
   for (const [k, e] of Object.entries(mem)) if (e.exercised) out.add(k);
   return out;
 }
+
+export interface CoverageStats {
+  /** Distinct labeled affordances ever observed across all runs. */
+  known: number;
+  /** How many have been exercised at least once. */
+  exercised: number;
+  /** Seen but never exercised in any run. */
+  never: number;
+  /** exercised / known, or 1 when nothing is known yet. */
+  ratio: number;
+  /** The most runs any single affordance has been observed in. */
+  runs: number;
+}
+
+/** Campaign-level coverage rollup across all runs folded into the memory. */
+export function coverageStats(mem: CoverageMemory): CoverageStats {
+  const entries = Object.values(mem);
+  const known = entries.length;
+  const exercised = entries.filter((e) => e.exercised).length;
+  const runs = entries.reduce((m, e) => Math.max(m, e.runCount), 0);
+  return {
+    known,
+    exercised,
+    never: known - exercised,
+    ratio: known === 0 ? 1 : exercised / known,
+    runs,
+  };
+}

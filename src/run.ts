@@ -35,6 +35,7 @@ import {
   diffExitCode,
 } from "./compare.js";
 import { loadLearned, mergeIntoStore, saveLearned } from "./learned.js";
+import { coverageStats, loadCoverage } from "./coverageStore.js";
 import { loadProfile } from "./profile.js";
 import type { RunReport, ServerLogSource } from "./types.js";
 import {
@@ -534,6 +535,15 @@ async function main(): Promise<void> {
   writeRunReport(runDir, report);
   writeReplayHtml(runDir, report);
   printSummary(report);
+  // Cross-run coverage memory rollup: the campaign view (this run already folded
+  // in), so a plateau in "ever exercised" is visible run-over-run.
+  if (args.coverageMem) {
+    const s = coverageStats(loadCoverage(args.coverageMemDir, loaded.profile.name));
+    console.log(
+      `Cross-run coverage: ${s.exercised}/${s.known} affordances ever exercised ` +
+        `(${(s.ratio * 100).toFixed(0)}%, ${s.never} never tried) across up to ${s.runs} run(s)`,
+    );
+  }
   console.log(`Findings: ${runDir}/findings.txt`);
   console.log(`Replay:   ${runDir}/index.html`);
 
