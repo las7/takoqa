@@ -18,3 +18,4 @@ profiles/*.local.yaml
 
 # Stray local scratch test files
 test/_*.ts
+coverage-mem/
